@@ -49,9 +49,28 @@ export async function downloadNovel(novelId: number, options: CommandOptions) {
         };
 
         if (novel.catalogueUrl) {
-            const { volumes, volumeMap, amount } = await getChapterList(novel.catalogueUrl);
+            const { volumes: allVolumes, volumeMap, amount: totalAmount } = await getChapterList(novel.catalogueUrl);
+
+            let volumes = allVolumes;
+            let amount = totalAmount;
+            if (options.volumeIndex !== undefined) {
+                const targetIndex = options.volumeIndex - 1;
+                volumes = allVolumes.filter((v) => v.index === targetIndex);
+                if (volumes.length === 0) {
+                    throw new Error(
+                        `第${options.volumeIndex}卷不存在，该小说共${allVolumes.length}卷`
+                    );
+                }
+                amount = 0;
+                for (const vol of volumes) {
+                    const chaps = volumeMap.get(vol.name);
+                    if (chaps) amount += chaps.length;
+                }
+            }
+
             let count = 0;
-            spinner.succeed(`成功获取小说详情，该小说共有${volumes.length}卷`);
+            spinner.succeed(`成功获取小说详情，该小说共有${allVolumes.length}卷`);
+            let epubIndex = 0;
             for (const volume of volumes) {
                 const volumeNameWithIndex = `${volume.index + 1}-${volume.name}`;
 
@@ -169,7 +188,7 @@ export async function downloadNovel(novelId: number, options: CommandOptions) {
                                 }
                             }
                             if (options.epub) {
-                                epubOptions.content[volume.index].content[chapterIndex] =
+                                epubOptions.content[epubIndex].content[chapterIndex] =
                                     `<h1>${modifiedChapterTitle}</h1>` + content;
                             } else if (!options.onlyImages) {
                                 const isTxt = options.ext === 'txt';
@@ -210,6 +229,7 @@ export async function downloadNovel(novelId: number, options: CommandOptions) {
                         }
                     }
                 }
+                epubIndex++;
             }
 
             const { minutes, seconds } = endCount();

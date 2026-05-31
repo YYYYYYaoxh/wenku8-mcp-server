@@ -54,6 +54,8 @@ interface CommandOptions {
     onlyText: boolean;
     /** When true, suppress all stdout console output (useful for MCP servers) */
     silent?: boolean;
+    /** 1-based volume index to download a specific volume only. If omitted, all volumes are downloaded. */
+    volumeIndex?: number;
 }
 
 interface VolumeInfo {

@@ -211,6 +211,12 @@ server.registerTool(
                 .string()
                 .default('./novels')
                 .describe('Directory path where the downloaded novel will be saved'),
+            volumeIndex: z
+                .number()
+                .int()
+                .positive()
+                .optional()
+                .describe('1-based volume index to download a specific volume only. Use getNovelDetails to find the volume index. Omit to download all volumes.'),
             onlyImages: z
                 .boolean()
                 .default(false)
@@ -247,6 +253,7 @@ server.registerTool(
                 strict: args.strict,
                 onlyText: args.onlyText,
                 silent: true,
+                volumeIndex: args.volumeIndex,
             };
             await downloadNovel(args.novelId, options);
             return {
