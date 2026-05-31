@@ -130,7 +130,14 @@ function questionTwo(question: keyof typeof Questions) {
                     init();
                 } else {
                     const spinner = ora('请求中，请稍等...').start();
-                    const result = await getHotList();
+                    let result;
+                    try {
+                        result = await getHotList();
+                    } catch (e) {
+                        spinner.stop();
+                        console.error('获取热门小说失败:', (e as Error).message);
+                        return init();
+                    }
                     spinner.stop();
                     const novels = result.find(({ type: t }) => t === type)!.novels;
                     promptNovelList(novels, question);
@@ -164,7 +171,14 @@ function questionTwo(question: keyof typeof Questions) {
                     return init();
                 } else if (searchKey) {
                     const spinner = ora('请求中，请稍等...').start();
-                    const novels = await search(searchKey, type);
+                    let novels;
+                    try {
+                        novels = await search(searchKey, type);
+                    } catch (e) {
+                        spinner.stop();
+                        console.error('搜索失败:', (e as Error).message);
+                        return init();
+                    }
                     spinner.stop();
                     if (novels) {
                         promptNovelList(novels, question);
@@ -209,11 +223,10 @@ function questionTwo(question: keyof typeof Questions) {
                         value: novelId,
 
                         name: updateChecked
-                            ? `${novelId}.${novelName}: ${lastReadChapter} ${
-                                  lastReadChapter != lastUpdatedChapter
-                                      ? chalk.yellow.bold('=> '.concat(lastUpdatedChapter!))
-                                      : chalk.green.bold('✔')
-                              }`
+                            ? `${novelId}.${novelName}: ${lastReadChapter} ${lastReadChapter != lastUpdatedChapter
+                                ? chalk.yellow.bold('=> '.concat(lastUpdatedChapter!))
+                                : chalk.green.bold('✔')
+                            }`
                             : `${novelId}.${novelName}: ${lastReadChapter}`,
                     }))
                     .concat({
@@ -226,14 +239,20 @@ function questionTwo(question: keyof typeof Questions) {
         if (id >= 0) promptNovelDetails(id);
         else {
             const spinner = ora('请求中，请稍等...').start();
-            for (let i = 0; i < favorites.length; i++) {
-                await retry(async () => {
-                    const { recentChapter } = await getNovelDetails(favorites[i].novelId);
-                    favorites[i].lastUpdatedChapter = recentChapter;
-                }, {
-                    minTimeout:3000,
-                    maxRetryTime: 10,
-                });
+            try {
+                for (let i = 0; i < favorites.length; i++) {
+                    await retry(async () => {
+                        const { recentChapter } = await getNovelDetails(favorites[i].novelId);
+                        favorites[i].lastUpdatedChapter = recentChapter;
+                    }, {
+                        minTimeout: 3000,
+                        maxRetryTime: 10,
+                    });
+                }
+            } catch (e) {
+                spinner.stop();
+                console.error('检查更新失败:', (e as Error).message);
+                return promptForFavorites(false);
             }
             spinner.stop();
             promptForFavorites(true);
@@ -274,10 +293,16 @@ async function promptNovelDetails(novelId: number) {
         }
     }
     const spinner = ora('请求中，请稍等...').start();
-    const { novelName, author, status, lastUpdateTime, length, tag, recentChapter, desc } = await getNovelDetails(
-        novelId
-    );
+    let details;
+    try {
+        details = await getNovelDetails(novelId);
+    } catch (e) {
+        spinner.stop();
+        console.error('获取小说详情失败:', (e as Error).message);
+        return init();
+    }
     spinner.stop();
+    const { novelName, author, status, lastUpdateTime, length, tag, recentChapter, desc } = details;
     const table = new Table({
         head: ['小说名', '作者', '标签', '完结状态', '全文长度', '最近更新时间', '最近章节'],
         wordWrap: true,
@@ -312,9 +337,9 @@ async function promptNovelDetails(novelId: number) {
                     .concat(
                         existsInFavorites
                             ? [
-                                  { name: '取消收藏该小说', value: 2 },
-                                  { name: '更新收藏数据', value: 3 },
-                              ]
+                                { name: '取消收藏该小说', value: 2 },
+                                { name: '更新收藏数据', value: 3 },
+                            ]
                             : { name: '收藏该小说', value: 1 }
                     )
                     .concat({ name: '返回', value: 4 }),

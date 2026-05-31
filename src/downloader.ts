@@ -1,4 +1,4 @@
-import axios from 'axios';
+import got from 'got';
 import iconv from 'iconv-lite';
 import fs from 'fs';
 import path from 'path';
@@ -8,6 +8,11 @@ import chalk, { modifierNames } from 'chalk';
 import { fetch } from './utils/fetch.js';
 import retry from 'async-retry';
 import Epub from 'epub-gen-memory';
+
+async function httpGet(url: string): Promise<{ data: Buffer }> {
+    const res = await got(url, { responseType: 'buffer' });
+    return { data: Buffer.from(res.body) };
+}
 
 const BASE_URL = 'https://www.wenku8.net/book/';
 const spinner = ora();
@@ -70,14 +75,14 @@ export async function downloadNovel(novelId: number, options: CommandOptions) {
                 const chapters = volumeMap.get(volume.name);
                 if (chapters) {
                     for (const { chapterIndex, chapterTitle, chapterUrl } of chapters) {
-                        const modifiedChapterTitle = chapterTitle.replace("\\", "＼").replace("/","／");
+                        const modifiedChapterTitle = chapterTitle.replace("\\", "＼").replace("/", "／");
                         let readFromDisk = false;
                         try {
                             if (!options.onlyImages) {
                                 spinner.start(
                                     `正在下载：` +
-                                        chalk.bold.black.bgWhite(` ${count + 1}/${amount} `) +
-                                        chalk.blue.bold(`${volume.name}、${modifiedChapterTitle}`)
+                                    chalk.bold.black.bgWhite(` ${count + 1}/${amount} `) +
+                                    chalk.blue.bold(`${volume.name}、${modifiedChapterTitle}`)
                                 );
                             }
                             const { content, images } = await retry(
@@ -123,11 +128,9 @@ export async function downloadNovel(novelId: number, options: CommandOptions) {
                                                         );
                                                         if (fs.existsSync(localImagePath)) {
                                                             imageReadFromDisk = true;
-                                                            return {data: fs.readFileSync(localImagePath)};
+                                                            return { data: fs.readFileSync(localImagePath) };
                                                         }
-                                                        return await axios.get(imageUrl, {
-                                                            responseType: 'arraybuffer',
-                                                        });
+                                                        return await httpGet(imageUrl);
                                                     },
                                                     {
                                                         minTimeout: 3000,
@@ -135,8 +138,7 @@ export async function downloadNovel(novelId: number, options: CommandOptions) {
                                                     }
                                                 );
                                                 spinner.succeed(
-                                                    `${volume.name}-${modifiedChapterTitle}-${imagePath}下载完成${
-                                                        imageReadFromDisk ? '由磁盘读取' : ''
+                                                    `${volume.name}-${modifiedChapterTitle}-${imagePath}下载完成${imageReadFromDisk ? '由磁盘读取' : ''
                                                     }`
                                                 );
 
@@ -152,9 +154,11 @@ export async function downloadNovel(novelId: number, options: CommandOptions) {
                                                 );
                                             } catch {
                                                 errorTimes++;
-                                                console.log(
-                                                    chalk.red(`${volume.name}-${modifiedChapterTitle}-${imagePath}下载失败`)
-                                                );
+                                                if (!options.silent) {
+                                                    console.log(
+                                                        chalk.red(`${volume.name}-${modifiedChapterTitle}-${imagePath}下载失败`)
+                                                    );
+                                                }
                                                 return appendFile(
                                                     path.join(process.cwd(), 'wenku8-error.log'),
                                                     `${volume.name}-${modifiedChapterTitle}-${imagePath}下载失败, 链接地址：${imageUrl}\n`
@@ -168,6 +172,10 @@ export async function downloadNovel(novelId: number, options: CommandOptions) {
                                 epubOptions.content[volume.index].content[chapterIndex] =
                                     `<h1>${modifiedChapterTitle}</h1>` + content;
                             } else if (!options.onlyImages) {
+                                const isTxt = options.ext === 'txt';
+                                const fileContent = isTxt
+                                    ? `${modifiedChapterTitle}\n\n${content}\n`
+                                    : `# ${modifiedChapterTitle}\n` + content + paths.map(path => `![](./插图/${path})`).join('\n');
                                 await writeFile(
                                     path.join(
                                         process.cwd(),
@@ -176,25 +184,25 @@ export async function downloadNovel(novelId: number, options: CommandOptions) {
                                         volumeNameWithIndex,
                                         `${chapterIndex}-${modifiedChapterTitle}.${options.ext}`
                                     ),
-                                    `# ${modifiedChapterTitle}\n` +
-                                        content +
-                                        paths.map(path => `![](./插图/${path})`).join('\n')
+                                    fileContent
                                 );
                             }
                             if (!options.onlyImages) {
                                 spinner.succeed(
                                     `下载成功：` +
-                                        chalk.bold.black.bgGreen(` ${count + 1}/${amount} `) +
-                                        chalk.blue.bold(
-                                            `${volume.name}、${modifiedChapterTitle}${readFromDisk ? '（由磁盘读取）' : ''}`
-                                        )
+                                    chalk.bold.black.bgGreen(` ${count + 1}/${amount} `) +
+                                    chalk.blue.bold(
+                                        `${volume.name}、${modifiedChapterTitle}${readFromDisk ? '（由磁盘读取）' : ''}`
+                                    )
                                 );
                             }
                             count++;
                         } catch (error) {
                             errorTimes++;
                             count++;
-                            console.log(chalk.red(`${modifiedChapterTitle}下载失败`));
+                            if (!options.silent) {
+                                console.log(chalk.red(`${modifiedChapterTitle}下载失败`));
+                            }
                             return appendFile(
                                 path.join(process.cwd(), 'wenku8-error.log'),
                                 `${modifiedChapterTitle}下载失败, 链接地址：${chapterUrl}`
@@ -218,15 +226,20 @@ export async function downloadNovel(novelId: number, options: CommandOptions) {
 
                 spinner.stop();
             }
-            console.log(
-                chalk.bold.green(`『 ${novel.novelName} 』` + '下载完成!' + `总共用时${minutes}分${seconds}秒`)
-            );
-            if (errorTimes) {
+            if (!options.silent) {
+                console.log(
+                    chalk.bold.green(`『 ${novel.novelName} 』` + '下载完成!' + `总共用时${minutes}分${seconds}秒`)
+                );
+            }
+            if (errorTimes && !options.silent) {
                 console.log(chalk.yellow(`本次下载中出现了${errorTimes}次错误，详情见日志文件wenku8-error.log`));
             }
         }
     } catch (error) {
-        console.log(error);
+        if (!options.silent) {
+            console.log(error);
+        }
+        throw error;
     }
 }
 
@@ -235,7 +248,7 @@ export async function downloadNovel(novelId: number, options: CommandOptions) {
  * @param catalogueUrl
  * @returns
  */
-async function getChapterList(catalogueUrl: NonNullable<INovel['catalogueUrl']>): Promise<{
+export async function getChapterList(catalogueUrl: NonNullable<INovel['catalogueUrl']>): Promise<{
     volumes: {
         index: number;
         name: string;
@@ -327,11 +340,8 @@ async function downloadChapter(chapterUrl: string, options: CommandOptions) {
                     ) || '';
         } catch (error) {
             if (error.message.indexOf('404') !== -1) {
-                const res = await axios.get(
-                    `http://dl.wenku8.com/packtxt.php?aid=${v.slice(-2)[0]}&vid=${v.slice(-1)[0]}`,
-                    {
-                        responseType: 'arraybuffer',
-                    }
+                const res = await httpGet(
+                    `http://dl.wenku8.com/packtxt.php?aid=${v.slice(-2)[0]}&vid=${v.slice(-1)[0]}`
                 );
                 content = iconv.decode(res.data, 'utf-16le');
             }
@@ -412,15 +422,40 @@ export async function getNovelDetails(novelId: number): Promise<INovel> {
         novelId,
         novelName,
         cover,
-        library,
-        author,
-        status,
-        lastUpdateTime,
-        length,
-        tag,
-        recentChapter,
-        desc,
+        library: library ?? '',
+        author: author ?? '',
+        status: status ?? '',
+        lastUpdateTime: lastUpdateTime ?? '',
+        length: length ?? '',
+        tag: tag ?? '',
+        recentChapter: recentChapter ?? '',
+        desc: desc ?? '',
         catalogueUrl,
+    };
+}
+
+/**
+ * 获取小说详细信息（含章节列表）
+ * @param novelId
+ * @returns
+ */
+export async function getNovelDetailsWithChapters(novelId: number): Promise<NovelDetailsWithChapters> {
+    const details = await getNovelDetails(novelId);
+    if (!details.catalogueUrl) {
+        return { ...details, volumes: [], totalChapters: 0 };
+    }
+    const { volumes, volumeMap } = await getChapterList(details.catalogueUrl);
+    const volumeInfos: VolumeInfo[] = volumes.map((v) => ({
+        index: v.index,
+        name: v.name,
+        chapterCount: volumeMap.get(v.name)?.length ?? 0,
+        chapters: volumeMap.get(v.name) ?? [],
+    }));
+    const totalChapters = volumeInfos.reduce((sum, v) => sum + v.chapterCount, 0);
+    return {
+        ...details,
+        volumes: volumeInfos,
+        totalChapters,
     };
 }
 

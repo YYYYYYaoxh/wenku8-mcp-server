@@ -52,6 +52,24 @@ interface CommandOptions {
     verbose: boolean;
     strict: boolean;
     onlyText: boolean;
+    /** When true, suppress all stdout console output (useful for MCP servers) */
+    silent?: boolean;
+}
+
+interface VolumeInfo {
+    index: number;
+    name: string;
+    chapterCount: number;
+    chapters: Array<{
+        chapterIndex: number;
+        chapterTitle: string;
+        chapterUrl: string;
+    }>;
+}
+
+interface NovelDetailsWithChapters extends INovel {
+    volumes: VolumeInfo[];
+    totalChapters: number;
 }
 
 interface FavoriteNovel {
