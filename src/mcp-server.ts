@@ -75,24 +75,19 @@ server.registerTool(
 server.registerTool(
     'wenku8_getHotList',
     {
-        title: 'Get Hot Novels List',
+        title: "Get Today's Hot Novels",
         description:
-            'Retrieve the hot novels list from 轻小说文库 (wenku8.net), including categories like new releases, popular picks, and anime adaptations.',
+            "Retrieve today's hot/popular novels from 轻小说文库 (wenku8.net). Returns a ranked list of trending light novels.",
         inputSchema: z.object({}),
         outputSchema: z.object({
-            categories: z
+            novels: z
                 .array(
                     z.object({
-                        type: z.string(),
-                        novels: z.array(
-                            z.object({
-                                novelName: z.string(),
-                                novelId: z.number(),
-                            })
-                        ),
+                        novelName: z.string(),
+                        novelId: z.number(),
                     })
                 )
-                .describe('List of novel categories with their novels'),
+                .describe("Today's hot novels list"),
         }),
         annotations: {
             readOnlyHint: true,
@@ -103,14 +98,16 @@ server.registerTool(
     async () => {
         try {
             const list = await getHotList();
+            const todayHot = list.find((c) => c.type === '今日热榜');
+            const novels = todayHot?.novels ?? [];
             return {
                 content: [
                     {
                         type: 'text' as const,
-                        text: `Retrieved ${list.length} hot novel categories`,
+                        text: `Retrieved ${novels.length} hot novels from today's ranking`,
                     },
                 ],
-                structuredContent: { categories: list },
+                structuredContent: { novels },
             };
         } catch (error) {
             return {
@@ -120,7 +117,7 @@ server.registerTool(
                         text: `Failed to get hot list: ${(error as Error).message}`,
                     },
                 ],
-                structuredContent: { categories: [] },
+                structuredContent: { novels: [] },
                 isError: true,
             };
         }
